@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * 泛微 SSO 配置
+ * 适配 weaversso.jar 参数命名
  */
 @Configuration
 @ConfigurationProperties(prefix = "weaver.sso")
@@ -13,19 +14,19 @@ public class WeaverSsoConfig {
     /** 是否启用泛微SSO */
     private boolean enabled = false;
 
-    /** CAS 服务端地址，如 http://192.168.1.100:8080 */
+    /** CAS 服务端地址，如 http://192.168.1.100:8080
+     *  对应 weaversso.jar 的 ssoServerLoginUrl 前缀和 ssoServerUrlPrefix 前缀 */
     private String serverUrl;
 
     /** CAS 登录路径，默认 /login/login.jsp */
     private String loginPath = "/login/login.jsp";
 
-    /** CAS Ticket 校验路径，默认 /sso/serviceValidate */
-    private String validatePath = "/sso/serviceValidate";
-
-    /** 应用标识（在泛微统一认证中心注册时分配） */
+    /** 应用标识（在泛微统一认证中心注册时分配）
+     *  对应 weaversso.jar 的 appid 参数 */
     private String appId;
 
-    /** 应用服务地址（本服务的外网可达地址），如 http://your-sso-service:8080 */
+    /** 应用服务地址（本服务的外网可达地址），如 http://your-sso-service:8080
+     *  对应 weaversso.jar 的 serverName 参数 */
     private String serverName;
 
     /** 回调接口路径，默认 /login/oauth/callback */
@@ -59,14 +60,6 @@ public class WeaverSsoConfig {
 
     public void setLoginPath(String loginPath) {
         this.loginPath = loginPath;
-    }
-
-    public String getValidatePath() {
-        return validatePath;
-    }
-
-    public void setValidatePath(String validatePath) {
-        this.validatePath = validatePath;
     }
 
     public String getAppId() {
@@ -111,20 +104,25 @@ public class WeaverSsoConfig {
 
     /**
      * 获取完整的 CAS 登录地址
+     * 对应 weaversso.jar AuthenticationFilter 的 ssoServerLoginUrl 参数
+     * 格式: http://OA地址/login/login.jsp?appid=应用标识
      */
     public String getCasLoginUrl() {
         return serverUrl + loginPath + "?appid=" + appId;
     }
 
     /**
-     * 获取完整的 Ticket 校验地址
+     * 获取 CAS 服务端 SSO 前缀地址
+     * 对应 weaversso.jar SSO20ProxyReceivingTicketValidationFilter 的 ssoServerUrlPrefix 参数
+     * 格式: http://OA地址/sso
      */
-    public String getCasValidateUrl() {
-        return serverUrl + validatePath;
+    public String getCasServerUrlPrefix() {
+        return serverUrl + "/sso";
     }
 
     /**
-     * 获取完整的回调地址
+     * 获取完整的回调地址（service URL）
+     * CAS 认证成功后回调到此地址
      */
     public String getServiceUrl() {
         return serverName + callbackPath;
