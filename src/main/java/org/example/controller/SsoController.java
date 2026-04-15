@@ -7,8 +7,8 @@ import org.example.dto.OrgListItem;
 import org.example.service.SsoProviderService;
 import org.example.util.ErrorUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -25,14 +25,30 @@ import java.util.List;
 public class SsoController {
 
     @Autowired
-    @Qualifier("testSsoProvider")
-    private SsoProviderService ssoProviderService;
+    private ApplicationContext applicationContext;
+
+    @Value("${app.sso.provider:test}")
+    private String providerName;
 
     @Value("${app.redirect.enabled:false}")
     private boolean redirectEnabled;
 
     @Value("${app.hostname:}")
     private String hostname;
+
+    /**
+     * 根据 app.sso.provider 配置动态获取 SSO Provider
+     * 配置值为 weaver 时，查找 weaverSsoProvider bean
+     * 配置值为 test 时，查找 testSsoProvider bean
+     */
+    private SsoProviderService getSsoProvider() {
+        String beanName = providerName + "SsoProvider";
+        try {
+            return applicationContext.getBean(beanName, SsoProviderService.class);
+        } catch (Exception e) {
+            throw new RuntimeException("未找到SSO Provider: " + beanName + "，请检查 app.sso.provider 配置");
+        }
+    }
 
     /**
      * 获取认证 URL
@@ -54,7 +70,7 @@ public class SsoController {
                 }
             }
 
-            String authUrl = ssoProviderService.getAuthUrl(request, redirectUri, state);
+            String authUrl = getSsoProvider().getAuthUrl(request, redirectUri, state);
             ApiResponse<String> response = ApiResponse.success();
             response.setAuthURL(authUrl);
             return ResponseEntity.ok(response);
@@ -71,7 +87,7 @@ public class SsoController {
     @GetMapping("/login/oauth/callback")
     public ResponseEntity<Void> handleCallback(HttpServletRequest request) {
         try {
-            String redirectUrl = ssoProviderService.handleCallback(request);
+            String redirectUrl = getSsoProvider().handleCallback(request);
             return ResponseEntity.status(HttpStatus.FOUND)
                     .header("Location", redirectUrl)
                     .build();
@@ -86,7 +102,7 @@ public class SsoController {
     @GetMapping("/login/oauth/getUserInfo")
     public ResponseEntity<ApiResponse<UserInfo>> getUserInfo(@RequestParam("code") String code) {
         try {
-            UserInfo userInfo = ssoProviderService.getUserInfo(code);
+            UserInfo userInfo = getSsoProvider().getUserInfo(code);
             ApiResponse<UserInfo> response = ApiResponse.success("", userInfo);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
@@ -100,7 +116,7 @@ public class SsoController {
     @GetMapping("/user/list")
     public ResponseEntity<ApiResponse<List<UserListItem>>> getUserList() {
         try {
-            List<UserListItem> userList = ssoProviderService.getUserList();
+            List<UserListItem> userList = getSsoProvider().getUserList();
             ApiResponse<List<UserListItem>> response = ApiResponse.success();
             response.setUserList(userList);
             return ResponseEntity.ok(response);
@@ -115,7 +131,7 @@ public class SsoController {
     @GetMapping("/org/list")
     public ResponseEntity<ApiResponse<List<OrgListItem>>> getOrgList() {
         try {
-            List<OrgListItem> orgList = ssoProviderService.getOrgList();
+            List<OrgListItem> orgList = getSsoProvider().getOrgList();
             ApiResponse<List<OrgListItem>> response = ApiResponse.success();
             response.setOrgList(orgList);
             return ResponseEntity.ok(response);
@@ -138,7 +154,7 @@ public class SsoController {
     @GetMapping(value = "/login/saml/metadata.xml", produces = MediaType.APPLICATION_XML_VALUE)
     public ResponseEntity<String> getSamlMetadata() {
         try {
-            String metadata = ssoProviderService.getSamlMetadata();
+            String metadata = getSsoProvider().getSamlMetadata();
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_XML)
                     .body(metadata);
@@ -156,7 +172,7 @@ public class SsoController {
             @RequestParam("SAMLResponse") String samlResponse,
             @RequestParam(value = "RelayState", required = false) String relayState) {
         try {
-            String redirectUrl = ssoProviderService.handleSamlAssert(samlResponse, relayState);
+            String redirectUrl = getSsoProvider().handleSamlAssert(samlResponse, relayState);
             return ResponseEntity.status(HttpStatus.FOUND)
                     .header("Location", redirectUrl)
                     .build();
