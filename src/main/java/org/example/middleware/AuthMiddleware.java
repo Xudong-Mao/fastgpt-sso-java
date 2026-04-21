@@ -46,7 +46,7 @@ public class AuthMiddleware implements Filter {
             
             String token = parts[1];
             if (authToken == null || authToken.isEmpty() || !authToken.equals(token)) {
-                sendUnauthorizedResponse(httpResponse, "token Unauthorized {token=" + token + ", authToken=" + authToken + "}");
+                sendUnauthorizedResponse(httpResponse, "token Unauthorized");
                 return;
             }
         }
@@ -55,7 +55,10 @@ public class AuthMiddleware implements Filter {
     }
     
     private boolean requiresAuth(String requestURI) {
-        return requestURI.startsWith("/user/list") || requestURI.startsWith("/org/list");
+        return requestURI.startsWith("/login/oauth/getAuthURL")
+                || requestURI.startsWith("/login/oauth/getUserInfo")
+                || requestURI.startsWith("/user/list")
+                || requestURI.startsWith("/org/list");
     }
     
     private void sendUnauthorizedResponse(HttpServletResponse response, String message) throws IOException {

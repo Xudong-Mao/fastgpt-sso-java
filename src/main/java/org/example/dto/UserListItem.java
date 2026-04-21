@@ -1,5 +1,7 @@
 package org.example.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.List;
 
 /**
@@ -10,6 +12,7 @@ public class UserListItem {
     private String memberName;
     private String avatar;
     private String contact;
+    @JsonProperty("orgs")
     private List<String> org;
 
     public UserListItem() {}

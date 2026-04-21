@@ -2,6 +2,7 @@ package org.example.controller;
 
 import org.example.dto.ApiResponse;
 import org.example.dto.UserInfo;
+import org.example.dto.UserInfoResponse;
 import org.example.dto.UserListItem;
 import org.example.dto.OrgListItem;
 import org.example.service.SsoProviderService;
@@ -100,13 +101,12 @@ public class SsoController {
      * 获取用户信息
      */
     @GetMapping("/login/oauth/getUserInfo")
-    public ResponseEntity<ApiResponse<UserInfo>> getUserInfo(@RequestParam("code") String code) {
+    public ResponseEntity<UserInfoResponse> getUserInfo(@RequestParam("code") String code) {
         try {
             UserInfo userInfo = getSsoProvider().getUserInfo(code);
-            ApiResponse<UserInfo> response = ApiResponse.success("", userInfo);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(UserInfoResponse.success(userInfo));
         } catch (Exception e) {
-            return ResponseEntity.ok(ApiResponse.error(ErrorUtils.getErrText(e)));
+            return ResponseEntity.ok(UserInfoResponse.error(ErrorUtils.getErrText(e)));
         }
     }
 

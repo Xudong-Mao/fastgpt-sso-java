@@ -34,6 +34,7 @@ import java.util.Map;
 public class WeaverSsoProviderServiceImpl implements SsoProviderService {
 
     private static final Logger log = LoggerFactory.getLogger(WeaverSsoProviderServiceImpl.class);
+    private static final String SESSION_REDIRECT_URI_KEY = "fastgpt_redirect_uri";
 
     /** code 在 GlobalStore 中的过期时间（分钟） */
     private static final int CODE_EXPIRE_MINUTES = 5;
@@ -55,6 +56,7 @@ public class WeaverSsoProviderServiceImpl implements SsoProviderService {
         if (state != null && !state.isEmpty()) {
             globalStoreService.setTmpValue("oauth_state:" + state, redirectUri, CODE_EXPIRE_MINUTES);
         }
+        request.getSession(true).setAttribute(SESSION_REDIRECT_URI_KEY, redirectUri);
 
         // 构建 CAS 登录地址: CAS_SERVER/login/login.jsp?appid=xxx&service=回调地址
         String serviceUrl = config.getServiceUrl();
@@ -117,10 +119,14 @@ public class WeaverSsoProviderServiceImpl implements SsoProviderService {
         if (redirectUri == null || redirectUri.isEmpty()) {
             redirectUri = request.getParameter("redirect_uri");
         }
+        if ((redirectUri == null || redirectUri.isEmpty()) && session.getAttribute(SESSION_REDIRECT_URI_KEY) != null) {
+            redirectUri = String.valueOf(session.getAttribute(SESSION_REDIRECT_URI_KEY));
+        }
 
         if (redirectUri == null || redirectUri.isEmpty()) {
             throw new RuntimeException("无法获取回调地址redirect_uri");
         }
+        session.removeAttribute(SESSION_REDIRECT_URI_KEY);
 
         // 拼接回传 FastGPT 前端的 URL
         String separator = redirectUri.contains("?") ? "&" : "?";
