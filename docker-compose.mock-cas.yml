@@ -1,0 +1,42 @@
+services:
+  mock-cas:
+    build:
+      context: ./mock-cas
+    image: fastgpt-mock-weaver-cas:1.0
+    container_name: fastgpt-mock-cas
+    restart: unless-stopped
+    ports:
+      - "18080:18080"
+    environment:
+      MOCK_CAS_PORT: 18080
+      MOCK_CAS_APP_ID: fastgpt-local
+      MOCK_CAS_USERNAME: zhangsan
+      MOCK_CAS_LOGINID: zhangsan
+      MOCK_CAS_LASTNAME: 张三
+      MOCK_CAS_EMAIL: zhangsan@example.com
+      MOCK_CAS_MOBILE: "13800000000"
+
+  fastgpt-sso:
+    image: fastgpt-sso-java:1.0
+    container_name: fastgpt-sso-java
+    restart: unless-stopped
+    depends_on:
+      - mock-cas
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_PORT: 8080
+      SSO_PROVIDER: weaver
+      SPRING_PROFILES_ACTIVE: weaver
+      AUTH_TOKEN: test-token
+      WEAVER_SSO_ENABLED: "true"
+      WEAVER_SSO_SERVER_URL: http://mock-cas:18080
+      WEAVER_SSO_LOGIN_PATH: /sso/login
+      WEAVER_SSO_APP_ID: fastgpt-local
+      WEAVER_SSO_SERVER_NAME: http://fastgpt-sso:8080
+      WEAVER_SSO_CALLBACK_PATH: /login/oauth/callback
+      WEAVER_SSO_ATTR_USERNAME: loginid
+      WEAVER_SSO_ATTR_MEMBER_NAME: lastname
+      WEAVER_SSO_ATTR_EMAIL: email
+      WEAVER_SSO_ATTR_MOBILE: mobile
+      LOGGING_LEVEL_ORG_EXAMPLE: DEBUG

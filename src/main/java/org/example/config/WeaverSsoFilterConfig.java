@@ -6,27 +6,25 @@ import com.weaver.sso.client.session.SingleSignOutHttpSessionListener;
 import com.weaver.sso.client.util.AssertionThreadLocalFilter;
 import com.weaver.sso.client.util.HttpServletRequestWrapperFilter;
 import com.weaver.sso.client.validation.SSO20ProxyReceivingTicketValidationFilter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
 
 /**
- * 泛微 weaversso.jar Filter/Listener 注册配置
+ * 泛微 weaversso.jar Filter/Listener 注册配置（旧模式，默认禁用）
  *
- * 根据《ecology统一认证中心V5》文档，配置以下组件：
- * 1. SingleSignOutHttpSessionListener - 单点登出监听器（可选）
- * 2. SingleSignOutFilter - 单点登出过滤器
- * 3. AuthenticationFilter - 认证过滤器（必须）
- * 4. SSO20ProxyReceivingTicketValidationFilter - Ticket校验过滤器（必须）
- * 5. HttpServletRequestWrapperFilter - 请求包裹过滤器（可选，支持 getRemoteUser()）
- * 6. AssertionThreadLocalFilter - Assertion线程本地过滤器（可选）
+ * 默认登录验证已改为「主动校验模式」：
+ * 由 WeaverSsoProviderServiceImpl.handleCallback 直接拿 ticket 调用
+ * CAS 服务端校验接口（weaver.sso.validate-path，默认 /sso/v1/tickets）
+ * 换取 JSON 用户信息，不再依赖本 Filter 链的 Session Assertion 机制。
  *
- * 仅在 app.sso.provider=weaver 时生效
+ * 如需回退到旧的 Filter 链被动校验模式，设置：
+ *   weaver.sso.filter-enabled=true（或环境变量 WEAVER_SSO_FILTER_ENABLED=true）
  */
 @Configuration
-@Profile("weaver")
+@ConditionalOnProperty(prefix = "weaver.sso", name = "filter-enabled", havingValue = "true")
 public class WeaverSsoFilterConfig {
 
     /**

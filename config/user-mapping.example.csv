@@ -1,0 +1,9 @@
+# 泛微 CAS 账号 → FastGPT 用户 映射表（UTF-8）
+# 复制为 user-mapping.csv 后按实际人员填写；# 开头为注释，首个非注释行为表头
+# cas_account      必填，CAS 校验返回的账号（不区分大小写）
+# fastgpt_username 必填，回传 FastGPT 的用户名
+# member_name      可选，姓名（为空时使用 CAS / HR 同步数据）
+# contact          可选，联系方式（为空时使用 CAS / HR 同步数据）
+# status           可选，0=停用，其余=启用
+cas_account,fastgpt_username,member_name,contact,status
+xitongceshi.cd,xitongceshi,系统测试,,1

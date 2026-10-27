@@ -5,8 +5,11 @@ import org.example.dto.UserInfo;
 import org.example.dto.UserInfoResponse;
 import org.example.dto.UserListItem;
 import org.example.dto.OrgListItem;
+import org.example.service.SsoLoginDeniedException;
 import org.example.service.SsoProviderService;
 import org.example.util.ErrorUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
@@ -24,6 +27,8 @@ import java.util.List;
  */
 @RestController
 public class SsoController {
+
+    private static final Logger log = LoggerFactory.getLogger(SsoController.class);
 
     @Autowired
     private ApplicationContext applicationContext;
@@ -77,6 +82,7 @@ public class SsoController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
+            log.error("SSO getAuthURL failed: redirectUri={}, state={}", redirectUri, state, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error(ErrorUtils.getErrText(e)));
         }
@@ -86,15 +92,36 @@ public class SsoController {
      * 处理回调
      */
     @GetMapping("/login/oauth/callback")
-    public ResponseEntity<Void> handleCallback(HttpServletRequest request) {
+    public ResponseEntity<String> handleCallback(HttpServletRequest request) {
         try {
             String redirectUrl = getSsoProvider().handleCallback(request);
             return ResponseEntity.status(HttpStatus.FOUND)
                     .header("Location", redirectUrl)
                     .build();
+        } catch (SsoLoginDeniedException e) {
+            return errorPage(HttpStatus.FORBIDDEN, "无法登录 FastGPT", e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            log.error("SSO callback failed: uri={}, query={}", request.getRequestURI(),
+                    sanitizeQuery(request.getQueryString()), e);
+            return errorPage(HttpStatus.INTERNAL_SERVER_ERROR, "统一认证登录异常",
+                    "统一认证登录失败，请稍后重试或联系管理员。");
         }
+    }
+
+    private ResponseEntity<String> errorPage(HttpStatus status, String title, String message) {
+        String html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>" + escapeHtml(title)
+                + "</title></head><body style=\"font-family:sans-serif;text-align:center;padding-top:80px\">"
+                + "<h2>" + escapeHtml(title) + "</h2><p>" + escapeHtml(message) + "</p></body></html>";
+        return ResponseEntity.status(status)
+                .contentType(new MediaType("text", "html", java.nio.charset.StandardCharsets.UTF_8))
+                .body(html);
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     /**
@@ -106,6 +133,7 @@ public class SsoController {
             UserInfo userInfo = getSsoProvider().getUserInfo(code);
             return ResponseEntity.ok(UserInfoResponse.success(userInfo));
         } catch (Exception e) {
+            log.error("SSO getUserInfo failed: code={}", mask(code), e);
             return ResponseEntity.ok(UserInfoResponse.error(ErrorUtils.getErrText(e)));
         }
     }
@@ -137,6 +165,42 @@ public class SsoController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.ok(ApiResponse.error(ErrorUtils.getErrText(e)));
+        }
+    }
+
+    /**
+     * 浏览器登录中转：在浏览器 Session 中记录 redirect_uri/state 后跳转 SSO 登录页
+     * getAuthURL 由 FastGPT 后端调用，Session Cookie 不会到达浏览器，因此需要这一跳
+     */
+    @GetMapping("/login/oauth/authorize")
+    public ResponseEntity<Void> authorize(HttpServletRequest request, @RequestParam("key") String key) {
+        try {
+            String loginUrl = getSsoProvider().startLogin(request, key);
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .header("Location", loginUrl)
+                    .build();
+        } catch (Exception e) {
+            log.error("SSO authorize failed: key={}", mask(key), e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+    }
+
+    /**
+     * 统一登出：清理本服务 Session 后跳转 CAS /sso/logout，清理 CAS 单点会话
+     * 仅清理 FastGPT 本地登录态时 CAS 会话仍在，下次访问会被自动免密登录
+     */
+    @GetMapping("/login/oauth/logout")
+    public ResponseEntity<Void> logout(
+            HttpServletRequest request,
+            @RequestParam(value = "redirect_uri", required = false) String redirectUri) {
+        try {
+            String logoutUrl = getSsoProvider().getLogoutUrl(request, redirectUri);
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .header("Location", logoutUrl)
+                    .build();
+        } catch (Exception e) {
+            log.error("SSO logout failed: redirectUri={}", redirectUri, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
@@ -179,5 +243,19 @@ public class SsoController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    private String sanitizeQuery(String query) {
+        if (query == null) {
+            return null;
+        }
+        return query.replaceAll("(?i)(ticket|code|token)=([^&]+)", "$1=***");
+    }
+
+    private String mask(String value) {
+        if (value == null || value.length() <= 8) {
+            return "***";
+        }
+        return value.substring(0, 4) + "..." + value.substring(value.length() - 4);
     }
 }
