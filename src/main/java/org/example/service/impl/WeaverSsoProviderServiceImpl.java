@@ -154,23 +154,45 @@ public class WeaverSsoProviderServiceImpl implements SsoProviderService {
         String mobile = getFieldString(userData, mapping.getMobile());
         session.removeAttribute(SESSION_RETRY_KEY);
 
-        // 通过映射表把 CAS 账号换成 FastGPT 用户，未映射或已停用则拒绝登录
+        // 通过映射表把 CAS 账号换成 FastGPT 用户；未映射时可自动建号；status=0 仍拒绝
         UserMappingService.UserMapping userMapping = userMappingService.findByCasAccount(casAccount);
+        String username;
         if (userMapping == null) {
-            log.warn("泛微SSO CAS账号未映射FastGPT用户，拒绝登录: casAccount={}", casAccount);
-            throw new SsoLoginDeniedException("统一认证账号 [" + casAccount + "] 未开通 FastGPT 账号，请联系管理员");
-        }
-        if (!userMapping.isEnabled()) {
+            if (!config.isAutoProvision()) {
+                log.warn("泛微SSO CAS账号未映射FastGPT用户，拒绝登录: casAccount={}", casAccount);
+                throw new SsoLoginDeniedException("统一认证账号 [" + casAccount + "] 未开通 FastGPT 账号，请联系管理员");
+            }
+            // 自动建号：username = CAS 账号原样，写入映射表并注入成员库
+            username = casAccount;
+            try {
+                userMapping = userMappingService.ensureAndAppend(casAccount, username, memberName, email);
+            } catch (IllegalStateException e) {
+                log.error("泛微SSO 自动建号失败: casAccount={}, err={}", casAccount, e.getMessage());
+                throw new SsoLoginDeniedException("统一认证账号 [" + casAccount + "] 自动开通 FastGPT 账号失败，请联系管理员");
+            }
+            if (!userMapping.isEnabled()) {
+                // 并发下可能读到刚被人工停用的记录
+                log.warn("泛微SSO 自动建号后发现账号已停用，拒绝登录: casAccount={}, username={}",
+                        casAccount, userMapping.getUsername());
+                throw new SsoLoginDeniedException("FastGPT 账号 [" + userMapping.getUsername() + "] 已停用，请联系管理员");
+            }
+            username = userMapping.getUsername();
+            hrSyncStoreService.upsertLoginUser(username, memberName, email);
+            log.info("泛微SSO 自动建号成功: casAccount={}, username={}", casAccount, username);
+        } else if (!userMapping.isEnabled()) {
             log.warn("泛微SSO 映射的FastGPT用户已停用，拒绝登录: casAccount={}, username={}", casAccount,
                     userMapping.getUsername());
             throw new SsoLoginDeniedException("FastGPT 账号 [" + userMapping.getUsername() + "] 已停用，请联系管理员");
-        }
-        String username = userMapping.getUsername();
-        if (userMapping.getMemberName() != null) {
-            memberName = userMapping.getMemberName();
-        }
-        if (userMapping.getContact() != null) {
-            email = userMapping.getContact();
+        } else {
+            username = userMapping.getUsername();
+            if (userMapping.getMemberName() != null) {
+                memberName = userMapping.getMemberName();
+            }
+            if (userMapping.getContact() != null) {
+                email = userMapping.getContact();
+            }
+            // 已映射用户也补进成员库，避免 /user/list 缺失导致 FastGPT 当成新成员
+            hrSyncStoreService.upsertLoginUser(username, memberName, email);
         }
 
         debug("[4/7 callback] casAccount={}, mapped username={}, userDataKeys={}", casAccount, username,

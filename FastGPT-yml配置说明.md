@@ -16,7 +16,7 @@ FastGPT 官方 SSO 文档没有内置 CAS Provider，但 FastGPT Pro 支持一�
 - 已将 `fastgpt-sso-java:1.0` 镜像加载到 x86 服务器。
 - 已在泛微统一认证管理端注册应用并获得 `appid`。
 - 泛微 CAS 能访问 `fastgpt-sso-java` 的对外回调地址。
-- 已准备好用户映射表 `user-mapping.csv`（CAS 账号 → FastGPT 用户），未映射的账号会被拒绝登录，见第 4.1 节。
+- 已准备好用户映射表目录 `sso-config`（可先放空表或示例）。默认开启自动建号：未映射 CAS 账号首次登录会写入映射表；`status=0` 仍拒绝，见第 4.1 节。
 
 加载镜像：
 
@@ -86,6 +86,8 @@ fastgpt-sso:
 
     # CAS 账号 → FastGPT 用户 映射表（容器内路径，对应下方 volumes 挂载）
     WEAVER_SSO_USER_MAPPING_FILE: /app/config/user-mapping.csv
+    # 未映射账号首次登录自动建号（username=CAS 账号）并追加 CSV；status=0 仍拒绝
+    WEAVER_SSO_AUTO_PROVISION: "true"
 
     # CAS 返回用户属性映射（JSON data / XML cas:attributes 中的字段名）
     WEAVER_SSO_ATTR_USERNAME: loginid
@@ -96,8 +98,8 @@ fastgpt-sso:
     # 仅在需要接收 HR 组织和人员同步时配置
     WEAVER_SSO_HR_SYNC_TOKEN: ${WEAVER_SSO_HR_SYNC_TOKEN}
   volumes:
-    # 挂载目录而不是单个文件，否则宿主机上编辑后容器内可能看不到新内容
-    - ./sso-config:/app/config:ro
+    # 挂载目录而不是单个文件；开启自动建号时不要加 :ro，否则无法追加映射行
+    - ./sso-config:/app/config
 ```
 
 > 如果 `fastgpt.yml` 已经定义了 `fastgpt` 网络，直接复用即可。如果实际网络名不是 `fastgpt`，需要将上面的网络名改成实际名称，并确保 FastGPT Pro 和 `fastgpt-sso` 处在同一 Docker 网络中。
@@ -140,13 +142,14 @@ services:
       WEAVER_SSO_SERVICE_INCLUDE_REDIRECT: "true"
       WEAVER_SSO_LOGOUT_REDIRECT_URL: ${FASTGPT_PUBLIC_URL}/login
       WEAVER_SSO_USER_MAPPING_FILE: /app/config/user-mapping.csv
+      WEAVER_SSO_AUTO_PROVISION: "true"
       WEAVER_SSO_ATTR_USERNAME: loginid
       WEAVER_SSO_ATTR_MEMBER_NAME: lastname
       WEAVER_SSO_ATTR_EMAIL: email
       WEAVER_SSO_ATTR_MOBILE: mobile
       WEAVER_SSO_HR_SYNC_TOKEN: ${WEAVER_SSO_HR_SYNC_TOKEN}
     volumes:
-      - ./sso-config:/app/config:ro
+      - ./sso-config:/app/config
     networks:
       - fastgpt
 
@@ -190,7 +193,7 @@ SSO 服务:   AUTH_TOKEN
 
 ### 4.1 用户映射表
 
-CAS 账号与 FastGPT 用户通过映射表匹配，**不在表中或 `status=0` 的账号会被拒绝登录**。
+CAS 账号与 FastGPT 用户通过映射表匹配。默认 `WEAVER_SSO_AUTO_PROVISION=true`：未映射账号首次登录会自动建号（`fastgpt_username` = CAS 账号）并追加 CSV；**`status=0` 仍拒绝登录**。设为 `false` 则恢复「未映射即拒绝」。
 
 在 `fastgpt.yml` 同级目录准备：
 
@@ -212,7 +215,7 @@ lisi.cd,lisi,,,0
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `cas_account` | 是 | 泛微 CAS 校验返回的账号，不区分大小写 |
-| `fastgpt_username` | 是 | 登录后 FastGPT 中的用户名，建议与成员同步的 `loginid` 一致 |
+| `fastgpt_username` | 是 | 登录后 FastGPT 中的用户名；自动建号时等于 CAS 账号 |
 | `member_name` | 否 | 姓名，为空时使用 CAS / HR 同步数据 |
 | `contact` | 否 | 联系方式，为空时使用 CAS / HR 同步数据 |
 | `status` | 否 | `0` 停用，空或其他值启用 |
@@ -220,7 +223,8 @@ lisi.cd,lisi,,,0
 维护方式：
 
 - 直接编辑宿主机上的 `./sso-config/user-mapping.csv`，保存后自动生效，**不需要重启容器**。
-- 停用人员把 `status` 改为 `0`，不建议直接删除。
+- 开启自动建号时 volumes **不要**加 `:ro`，否则无法追加新行。
+- 停用人员把 `status` 改为 `0`，不建议直接删除；自动建号不会重建停用账号。
 - 不确定 `cas_account` 怎么填时，让用户登录一次，然后执行 `docker logs fastgpt-sso | grep casAccount=` 查看实际账号。
 - 用 Excel 编辑时另存为「CSV UTF-8」；字段内不能含英文逗号。
 
@@ -360,9 +364,10 @@ CAS 通常要求 Ticket 申请时的 `service` 与校验时完全一致，包括
 
 ### CAS 登录后提示「未开通 FastGPT 账号」或「已停用」
 
-- 执行 `docker logs fastgpt-sso | grep casAccount=`，确认实际 CAS 账号后补充到映射表。
+- 若已开启自动建号却仍提示未开通：检查 `WEAVER_SSO_AUTO_PROVISION` 是否为 `true`，以及 volumes 是否可写（不要 `:ro`）。
+- 执行 `docker logs fastgpt-sso | grep casAccount=`，确认实际 CAS 账号；关闭自动建号时需手工补充映射表。
 - 检查该行 `status` 是否为 `0`。
-- 日志出现 `用户映射文件不可读` 时，检查 `volumes` 挂载和 `WEAVER_SSO_USER_MAPPING_FILE` 路径。
+- 日志出现 `自动建号写入映射文件失败` 或 `用户映射文件不可读` 时，检查 `volumes` 挂载和 `WEAVER_SSO_USER_MAPPING_FILE` 路径。
 
 ### 退出后再次登录没有要求输入密码
 

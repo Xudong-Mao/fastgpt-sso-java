@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -49,6 +50,84 @@ public class UserMappingService {
         }
         reloadIfChanged();
         return mappings.get(casAccount.trim().toLowerCase());
+    }
+
+    /**
+     * 确保映射存在：已有记录直接返回（含 status=0）；否则追加 CSV 并返回新建记录。
+     * 与 reload 共用同一把锁，避免并发双写。
+     */
+    public synchronized UserMapping ensureAndAppend(String casAccount, String username,
+                                                     String memberName, String contact) {
+        if (casAccount == null || casAccount.trim().isEmpty()) {
+            throw new IllegalArgumentException("casAccount 不能为空");
+        }
+        if (username == null || username.trim().isEmpty()) {
+            throw new IllegalArgumentException("username 不能为空");
+        }
+        reloadIfChanged();
+        String key = casAccount.trim().toLowerCase();
+        UserMapping existing = mappings.get(key);
+        if (existing != null) {
+            return existing;
+        }
+
+        String file = config.getUserMappingFile();
+        if (file == null || file.isEmpty()) {
+            throw new IllegalStateException("未配置用户映射文件 weaver.sso.user-mapping-file，无法自动建号");
+        }
+        Path path = Paths.get(file);
+        String safeCas = sanitizeCsvField(casAccount.trim());
+        String safeUser = sanitizeCsvField(username.trim());
+        String safeName = sanitizeCsvField(memberName);
+        String safeContact = sanitizeCsvField(contact);
+        String line = safeCas + "," + safeUser + "," + nullToEmpty(safeName) + ","
+                + nullToEmpty(safeContact) + ",1\n";
+
+        try {
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            if (!Files.exists(path) || Files.size(path) == 0) {
+                Files.write(path,
+                        ("cas_account,fastgpt_username,member_name,contact,status\n" + line)
+                                .getBytes(StandardCharsets.UTF_8),
+                        StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            } else {
+                // 确保末尾有换行再追加，避免粘在上一行
+                byte[] existingBytes = Files.readAllBytes(path);
+                boolean needsNewline = existingBytes.length > 0
+                        && existingBytes[existingBytes.length - 1] != '\n';
+                String toWrite = (needsNewline ? "\n" : "") + line;
+                Files.write(path, toWrite.getBytes(StandardCharsets.UTF_8),
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            }
+            loadedModified = Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException e) {
+            log.error("自动建号写入映射文件失败: {}", path.toAbsolutePath(), e);
+            throw new IllegalStateException("自动建号写入映射文件失败: " + path.toAbsolutePath()
+                    + "（请确认目录可写，Docker 不要使用 :ro 挂载）", e);
+        }
+
+        UserMapping created = new UserMapping(safeCas, safeUser, safeName, safeContact, true);
+        Map<String, UserMapping> next = new HashMap<>(mappings);
+        next.put(key, created);
+        mappings = next;
+        log.info("自动建号并写入映射表: casAccount={}, username={}, file={}",
+                safeCas, safeUser, path.toAbsolutePath());
+        return created;
+    }
+
+    private static String sanitizeCsvField(String value) {
+        if (value == null) {
+            return null;
+        }
+        // 简单 CSV：去掉英文逗号和换行，避免破坏列
+        return value.replace(",", " ").replace("\r", " ").replace("\n", " ").trim();
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private synchronized void reloadIfChanged() {

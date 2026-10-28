@@ -5,5 +5,7 @@
 # member_name      可选，姓名（为空时使用 CAS / HR 同步数据）
 # contact          可选，联系方式（为空时使用 CAS / HR 同步数据）
 # status           可选，0=停用，其余=启用
+# 开启 WEAVER_SSO_AUTO_PROVISION=true 时，未映射账号首次登录会自动追加一行
+# （fastgpt_username=cas_account），目录需可写；status=0 不会被自动重建
 cas_account,fastgpt_username,member_name,contact,status
 xitongceshi.cd,xitongceshi,系统测试,,1

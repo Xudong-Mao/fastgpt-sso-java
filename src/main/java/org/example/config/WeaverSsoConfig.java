@@ -64,8 +64,14 @@ public class WeaverSsoConfig {
     /** CAS 登出后回跳地址（如 FastGPT 登录页），为空时停留在 CAS 登出页 */
     private String logoutRedirectUrl;
 
-    /** CAS 账号 → FastGPT 用户 映射表文件（CSV），未映射的账号拒绝登录 */
+    /** CAS 账号 → FastGPT 用户 映射表文件（CSV） */
     private String userMappingFile;
+
+    /**
+     * 未映射账号是否自动建号：username=CAS 账号，并追加写入映射表。
+     * status=0 的已有映射仍拒绝登录。
+     */
+    private boolean autoProvision = true;
 
     /** CAS 校验接口额外参数（如 appId、timestamp、sign 等） */
     private Map<String, String> extraParams = new LinkedHashMap<>();
@@ -239,6 +245,14 @@ public class WeaverSsoConfig {
 
     public void setUserMappingFile(String userMappingFile) {
         this.userMappingFile = userMappingFile;
+    }
+
+    public boolean isAutoProvision() {
+        return autoProvision;
+    }
+
+    public void setAutoProvision(boolean autoProvision) {
+        this.autoProvision = autoProvision;
     }
 
     public String getValidatePath() {

@@ -78,6 +78,34 @@ public class HrSyncStoreService {
         return userStore.get(username);
     }
 
+    /**
+     * 登录自动建号时写入/补全成员，供 /user/list 与 getUserInfo 使用。
+     * 已存在时只补空字段，不覆盖 HR 同步的组织和已有姓名/联系方式。
+     */
+    public void upsertLoginUser(String username, String memberName, String contact) {
+        if (username == null || username.isEmpty()) {
+            return;
+        }
+        UserListItem existing = userStore.get(username);
+        if (existing != null) {
+            if ((existing.getMemberName() == null || existing.getMemberName().isEmpty())
+                    && memberName != null && !memberName.isEmpty()) {
+                existing.setMemberName(memberName);
+            }
+            if ((existing.getContact() == null || existing.getContact().isEmpty())
+                    && contact != null && !contact.isEmpty()) {
+                existing.setContact(contact);
+            }
+            return;
+        }
+        UserListItem user = new UserListItem();
+        user.setUsername(username);
+        user.setMemberName(memberName);
+        user.setContact(contact);
+        user.setOrg(new ArrayList<String>());
+        userStore.put(username, user);
+    }
+
     // ========================= 组织同步 =========================
 
     /**
